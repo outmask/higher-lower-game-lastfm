@@ -1,0 +1,969 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Höher oder Tiefer</title>
+<meta name="description" content="Ein kleines Higher-Lower-Spiel für jedes Last.fm-Profil. / A little higher-or-lower game for any Last.fm profile.">
+<script>
+  // Theme vor dem ersten Zeichnen setzen, damit nichts aufblitzt
+  try { var t = JSON.parse(localStorage.getItem('hot:theme')); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800;900&family=Caveat:wght@500;700&display=swap">
+<style>
+/* Layout: wie ein Notizzettel-Projekt. Eine schmale Spalte auf der Startseite,
+   im Spiel zwei Karten nebeneinander (am Handy untereinander), dazwischen ein
+   von Hand umkringeltes "vs". */
+:root {
+  --bg: #f1f0ea;
+  --paper: #ffffff;
+  --ink: #1d1d22;
+  --ink-2: #4b4b54;
+  --ink-3: #7c7c85;
+  --rule: #d9d8d0;
+  --edge: #1d1d22;
+  --pen: #2b50d6;
+  --mark: #ffe14a;
+  --on-mark: #1d1d22;
+  --good: #1d8f4e;
+  --bad: #d23a3a;
+  --shadow: #1d1d22;
+  --hl: #ffe14a;
+  --on-solid: #ffffff;
+  --f-head: "Rubik", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --f-hand: "Caveat", "Comic Sans MS", "Chalkboard SE", cursive;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #18191d; --paper: #222429; --ink: #eceae4; --ink-2: #bdbbb4; --ink-3: #8d8c92;
+    --rule: #34363d; --edge: #5b5d66; --pen: #8aa4ff; --mark: #e9c93b; --on-mark: #1d1d22;
+    --good: #43c97b; --bad: #ff6f6f; --shadow: #000000; --hl: rgba(233, 201, 59, .42); --on-solid: #10131f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #18191d; --paper: #222429; --ink: #eceae4; --ink-2: #bdbbb4; --ink-3: #8d8c92;
+  --rule: #34363d; --edge: #5b5d66; --pen: #8aa4ff; --mark: #e9c93b; --on-mark: #1d1d22;
+  --good: #43c97b; --bad: #ff6f6f; --shadow: #000000; --hl: rgba(233, 201, 59, .42); --on-solid: #10131f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+[hidden] { display: none !important; }
+button, input, select { font: inherit; color: inherit; }
+a { color: var(--pen); text-underline-offset: 2px; }
+:focus-visible { outline: 2px dashed var(--pen); outline-offset: 3px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.mark { background: linear-gradient(transparent 58%, var(--hl) 58%, var(--hl) 94%, transparent 94%); color: inherit; padding: 0 .08em; }
+.hand { font-family: var(--f-hand); font-weight: 700; color: var(--pen); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font-family: var(--f-head); font-weight: 700; font-size: 1rem; line-height: 1.2;
+  background: var(--paper); color: var(--ink); border: 2px solid var(--edge); border-radius: 8px;
+  padding: 10px 16px; cursor: pointer; text-decoration: none;
+  box-shadow: 3px 3px 0 var(--shadow); transition: transform .08s, box-shadow .08s;
+}
+.btn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--shadow); }
+.btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--shadow); }
+.btn:disabled { opacity: .55; cursor: default; transform: none; box-shadow: 3px 3px 0 var(--shadow); }
+.btn-main { background: var(--pen); color: #fff; border-color: var(--edge); }
+[data-theme="dark"] .btn-main { color: #10131f; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn-main { color: #10131f; } }
+.btn-sm { padding: 6px 11px; font-size: .9rem; box-shadow: 2px 2px 0 var(--shadow); }
+
+/* top bar (shared) */
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(env(safe-area-inset-top, 0px) + 12px) 18px 12px; }
+.brand { font-family: var(--f-head); font-weight: 800; font-size: 1.05rem; text-decoration: none; color: var(--ink); background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap; }
+.brand small { font-family: var(--f-hand); font-weight: 700; font-size: 1.05rem; color: var(--ink-3); margin-left: 4px; }
+.theme { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: grid; place-items: center; box-shadow: 2px 2px 0 var(--shadow); }
+.theme svg { width: 20px; height: 20px; }
+
+/* ---------- start ---------- */
+.start-wrap { max-width: 620px; margin: 0 auto; padding: 10px 18px calc(env(safe-area-inset-bottom, 0px) + 40px); }
+h1 { font-family: var(--f-head); font-weight: 900; font-size: clamp(2.9rem, 11vw, 4.6rem); line-height: .95; letter-spacing: -.02em; margin: 26px 0 12px; }
+h1 .or { font-family: var(--f-hand); font-weight: 700; font-size: .55em; letter-spacing: 0; color: var(--pen); display: inline-block; transform: rotate(-6deg) translateY(-.15em); margin: 0 .05em; }
+.intro { font-size: 1.12rem; color: var(--ink-2); margin: 0 0 26px; max-width: 32rem; }
+.panel { background: var(--paper); border: 2px solid var(--edge); border-radius: 12px; padding: 20px; box-shadow: 4px 4px 0 var(--shadow); position: relative; }
+.lbl { display: block; font-family: var(--f-head); font-weight: 700; font-size: .92rem; margin: 0 0 6px; }
+.row { display: flex; gap: 10px; }
+.row input[type=text] { flex: 1; min-width: 0; }
+.txt { background: var(--bg); border: 2px solid var(--edge); border-radius: 8px; padding: 10px 12px; font-size: 1.08rem; outline: none; }
+.txt:focus { border-color: var(--pen); }
+.txt::placeholder { color: var(--ink-3); }
+.note {
+  position: absolute; right: -14px; top: -34px; transform: rotate(4deg);
+  font-family: var(--f-hand); font-weight: 700; font-size: 1.25rem; color: var(--pen); line-height: 1; pointer-events: none;
+  display: flex; align-items: flex-end; gap: 2px;
+}
+.note svg { width: 46px; height: 34px; margin-bottom: -12px; }
+.choices { display: grid; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 2px dashed var(--rule); }
+.pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick button { background: var(--bg); border: 2px solid var(--rule); border-radius: 999px; padding: 5px 13px; font-size: .95rem; cursor: pointer; color: var(--ink-2); }
+.pick button:hover { border-color: var(--ink-3); color: var(--ink); }
+.pick button[aria-checked=true] { border-color: var(--edge); background: var(--mark); color: var(--on-mark); font-weight: 700; }
+select.txt { font-size: 1rem; padding: 8px 10px; cursor: pointer; }
+.hint { font-size: .86rem; color: var(--ink-3); margin: 4px 0 0; }
+.key { margin-top: 18px; padding-top: 14px; border-top: 2px dashed var(--rule); font-size: .95rem; color: var(--ink-2); }
+.key summary { cursor: pointer; font-family: var(--f-head); font-weight: 700; color: var(--ink); }
+.key p { margin: 8px 0 10px; }
+.key .txt { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .92rem; }
+.key-state { font-family: var(--f-hand); font-size: 1.15rem; font-weight: 700; margin-left: 6px; }
+.key-state.ok { color: var(--good); }
+.key-state.no { color: var(--bad); }
+.err { margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--bad) 12%, transparent); border: 2px solid var(--bad); color: var(--ink); font-size: .95rem; }
+.recent { margin-top: 30px; }
+.recent h2, .how h2 { font-family: var(--f-head); font-weight: 800; font-size: 1.15rem; margin: 0 0 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; background: var(--paper); border: 2px solid var(--edge); border-radius: 999px; padding: 4px 12px 4px 4px; cursor: pointer; font-weight: 600; box-shadow: 2px 2px 0 var(--shadow); }
+.chip:hover { transform: translate(-1px, -1px); }
+.chip .av { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; font-family: var(--f-head); font-weight: 800; font-size: .8rem; color: #1d1d22; overflow: hidden; flex: none; }
+.chip small { color: var(--ink-3); font-weight: 500; }
+.how { margin-top: 34px; }
+.how ol { margin: 0; padding-left: 1.3em; color: var(--ink-2); }
+.how li { margin: 4px 0; }
+.how kbd { font-family: ui-monospace, Menlo, monospace; font-size: .85em; border: 1.5px solid var(--edge); border-bottom-width: 3px; border-radius: 5px; padding: 0 5px; background: var(--paper); color: var(--ink); }
+footer.foot { margin-top: 40px; padding-top: 14px; border-top: 2px dashed var(--rule); font-size: .88rem; color: var(--ink-3); }
+
+/* ---------- loading ---------- */
+.load { min-height: 100%; display: grid; place-items: center; padding: 24px; text-align: center; }
+.load p { margin: 8px 0 0; color: var(--ink-2); }
+.load b { font-family: var(--f-head); font-size: 1.6rem; color: var(--ink); }
+.dots { display: inline-flex; gap: 6px; }
+.dots i { width: 12px; height: 12px; border-radius: 50%; background: var(--pen); animation: hop 1s ease-in-out infinite; }
+.dots i:nth-child(2) { animation-delay: .15s; background: var(--mark); border: 2px solid var(--edge); }
+.dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes hop { 50% { transform: translateY(-10px); } }
+
+/* ---------- game ---------- */
+.game { min-height: 100%; display: flex; flex-direction: column; }
+.game .bar { border-bottom: 2px solid var(--edge); background: var(--paper); }
+.who { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.who .av { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 2px solid var(--edge); display: grid; place-items: center; font-family: var(--f-head); font-weight: 800; color: #1d1d22; flex: none; overflow: hidden; }
+.who div { min-width: 0; line-height: 1.25; }
+.who b { display: block; font-family: var(--f-head); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who span { display: block; font-size: .8rem; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.score { display: flex; gap: 14px; align-items: baseline; font-size: .85rem; color: var(--ink-3); white-space: nowrap; }
+.score b { font-family: var(--f-head); font-weight: 800; font-size: 1.4rem; color: var(--ink); margin-left: 4px; font-variant-numeric: tabular-nums; display: inline-block; }
+.score b.bump { animation: bump .4s ease; }
+@keyframes bump { 40% { transform: scale(1.4) rotate(-6deg); color: var(--good); } }
+.back { background: none; border: 0; cursor: pointer; font-family: var(--f-head); font-weight: 700; color: var(--ink-2); padding: 6px 4px; white-space: nowrap; }
+.back:hover { color: var(--ink); text-decoration: underline; }
+
+.arena { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 18px; max-width: 1060px; width: 100%; margin: 0 auto; padding: 26px 18px calc(env(safe-area-inset-bottom, 0px) + 26px); }
+.card { background: var(--paper); border: 2px solid var(--edge); border-radius: 14px; box-shadow: 5px 5px 0 var(--shadow); padding: 18px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.card.left { transform: rotate(-.6deg); }
+.card.right { transform: rotate(.5deg); }
+.art { aspect-ratio: 1 / 1; width: 100%; max-width: 260px; margin: 0 auto; border-radius: 8px; border: 2px solid var(--edge); overflow: hidden; display: grid; place-items: center; position: relative; }
+.art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.art .ini { font-family: var(--f-head); font-weight: 900; font-size: clamp(3rem, 8vw, 5.2rem); color: #1d1d22; letter-spacing: -.03em; }
+.art .doodle { position: absolute; right: 10px; bottom: 6px; font-family: var(--f-hand); font-size: 1.1rem; color: #1d1d22; opacity: .6; transform: rotate(-4deg); }
+.info { display: grid; gap: 4px; text-align: center; justify-items: center; min-width: 0; }
+.tag { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
+.title { margin: 0; font-family: var(--f-head); font-weight: 800; font-size: clamp(1.4rem, 2.8vw, 2rem); line-height: 1.1; overflow-wrap: anywhere; text-wrap: balance; }
+.title.long { font-size: clamp(1.15rem, 2.1vw, 1.5rem); }
+.by { margin: 0; color: var(--ink-2); }
+.num { margin-top: 6px; font-family: var(--f-head); font-weight: 900; font-size: clamp(2.4rem, 5.2vw, 3.6rem); line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.num small { display: block; font-family: var(--f-body); font-weight: 500; font-size: .9rem; letter-spacing: 0; color: var(--ink-3); margin-top: 4px; }
+.ask { margin: 6px 0 0; color: var(--ink-2); }
+.ask b { color: var(--ink); }
+.btns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; width: 100%; margin-top: 6px; }
+.btns .btn { padding: 12px 10px; font-size: 1.05rem; }
+.btn-up { background: var(--good); color: var(--on-solid); }
+.btn-down { background: var(--bad); color: var(--on-solid); }
+.card.right.ok { border-color: var(--good); }
+.card.right.no { border-color: var(--bad); }
+.card.right.ok .num { color: var(--good); }
+.card.right.no .num { color: var(--bad); }
+
+.vs { position: relative; width: 74px; height: 64px; display: grid; place-items: center; font-family: var(--f-hand); font-weight: 700; font-size: 2rem; color: var(--ink); }
+.vs svg.ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.vs svg.ring path { fill: none; stroke: var(--pen); stroke-width: 2.5; stroke-linecap: round; }
+.vs.ok { color: var(--good); }
+.vs.ok svg.ring path { stroke: var(--good); }
+.vs.no { color: var(--bad); }
+.vs.no svg.ring path { stroke: var(--bad); }
+
+.in-left { animation: inLeft .45s cubic-bezier(.3, .8, .25, 1) both; }
+.in-right { animation: inRight .45s cubic-bezier(.3, .8, .25, 1) .06s both; }
+@keyframes inLeft { from { transform: translateX(60%) rotate(.5deg); } to { transform: rotate(-.6deg); } }
+@keyframes inRight { from { transform: translateY(18px) rotate(3deg); opacity: 0; } to { transform: rotate(.5deg); opacity: 1; } }
+.wobble { animation: wobble .5s ease; }
+@keyframes wobble { 20% { transform: rotate(3deg) translateX(-6px); } 45% { transform: rotate(-2deg) translateX(6px); } 70% { transform: rotate(1.5deg) translateX(-3px); } 100% { transform: rotate(.5deg); } }
+
+/* game over */
+.over { position: fixed; inset: 0; z-index: 30; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; padding: 18px; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.over-card { width: 100%; max-width: 440px; background: var(--paper); border: 2px solid var(--edge); border-radius: 14px; box-shadow: 6px 6px 0 var(--shadow); padding: 22px; transform: rotate(-.8deg); animation: drop .35s cubic-bezier(.2, .9, .3, 1.25) both; }
+@keyframes drop { from { transform: translateY(-20px) rotate(-3deg); opacity: 0; } to { transform: rotate(-.8deg); opacity: 1; } }
+.over-card .hand { font-size: 1.6rem; margin: 0; color: var(--bad); }
+.over-card h2 { font-family: var(--f-head); font-weight: 900; font-size: 2.1rem; margin: 0; line-height: 1.05; }
+.big { font-family: var(--f-head); font-weight: 900; font-size: 4.6rem; line-height: 1; margin: 12px 0 2px; display: flex; align-items: baseline; gap: 12px; }
+.big span { font-family: var(--f-body); font-weight: 500; font-size: 1rem; color: var(--ink-2); }
+.record { font-family: var(--f-hand); font-size: 1.5rem; font-weight: 700; color: var(--good); transform: rotate(-3deg); display: inline-block; }
+.why { color: var(--ink-2); margin: 10px 0 18px; }
+.why b { color: var(--ink); }
+.over-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.over-btns .btn:first-child { grid-column: 1 / -1; }
+.over-note { margin: 12px 0 0; font-size: .88rem; color: var(--ink-3); min-height: 1.2em; }
+.confetti { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
+
+@media (max-width: 760px) {
+  .note { display: none; }
+  .arena { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; gap: 8px; padding: 14px 12px calc(env(safe-area-inset-bottom, 0px) + 16px); align-content: center; }
+  .card { flex-direction: row; align-items: center; padding: 12px; gap: 12px; }
+  .art { width: 92px; flex: none; max-width: none; }
+  .art .ini { font-size: 2.2rem; }
+  .art .doodle { display: none; }
+  .info { text-align: left; justify-items: start; flex: 1; }
+  .title { font-size: 1.3rem; }
+  .title.long { font-size: 1.05rem; }
+  .num { font-size: 2.2rem; margin-top: 2px; }
+  .num small { display: inline; margin-left: 4px; }
+  .btns .btn { padding: 10px 6px; font-size: .98rem; }
+  .vs { margin: 0 auto; width: 60px; height: 48px; font-size: 1.6rem; }
+  @keyframes inLeft { from { transform: translateY(60%) rotate(.5deg); } to { transform: rotate(-.6deg); } }
+  .score { gap: 10px; }
+  .back span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .in-left, .in-right, .wobble, .over-card, .score b.bump, .dots i { animation: none !important; }
+}
+
+/* v2 additions */
+.credit { margin: 14px 0 0; padding-top: 10px; border-top: 2px dashed var(--rule); font-family: var(--f-hand); font-weight: 700; font-size: 1.1rem; color: var(--ink-3); text-align: center; }
+.tools { display: flex; align-items: center; gap: 10px; }
+.lang { display: inline-flex; border: 2px solid var(--edge); border-radius: 8px; overflow: hidden; box-shadow: 2px 2px 0 var(--shadow); }
+.lang button { border: 0; background: var(--paper); padding: 6px 10px; font-family: var(--f-head); font-weight: 700; font-size: .85rem; cursor: pointer; color: var(--ink-3); }
+.lang button + button { border-left: 2px solid var(--edge); }
+.lang button[aria-pressed=true] { background: var(--mark); color: var(--on-mark); }
+.art .pic { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .35s ease; }
+.art .pic.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .art .pic { transition: none; } }
+</style>
+</head>
+<body>
+
+<div id="screen-start">
+  <header class="bar">
+    <span class="brand"><span data-i18n="brand"></span> <small>v2</small></span>
+    <div class="tools">
+      <div class="lang" role="group" aria-label="Sprache / Language">
+        <button type="button" data-lang="de" aria-pressed="false">DE</button>
+        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+      </div>
+      <button class="btn theme" type="button" data-theme-toggle></button>
+    </div>
+  </header>
+  <main class="start-wrap">
+    <h1 data-i18n="h1"></h1>
+    <p class="intro" data-i18n="intro"></p>
+
+    <form id="start-form" class="panel" autocomplete="off" novalidate>
+      <span class="note" aria-hidden="true"><span data-i18n="note"></span>
+        <svg viewBox="0 0 46 34"><path d="M40 2 C 42 14, 30 24, 8 26 M8 26 l 7 -6 M8 26 l 8 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </span>
+      <label class="lbl" for="user" data-i18n="lblUser"></label>
+      <div class="row">
+        <input class="txt" id="user" name="user" type="text" data-i18n-ph="phUser" spellcheck="false" autocapitalize="off" autocorrect="off" maxlength="40" enterkeyhint="go">
+        <button class="btn btn-main" type="submit" id="go" data-i18n="go"></button>
+      </div>
+
+      <div class="choices">
+        <div>
+          <span class="lbl" id="lbl-type" data-i18n="lblType"></span>
+          <div class="pick" role="radiogroup" aria-labelledby="lbl-type" data-name="type">
+            <button type="button" role="radio" aria-checked="true" data-v="artists" data-i18n="tArtists"></button>
+            <button type="button" role="radio" aria-checked="false" data-v="tracks" data-i18n="tTracks"></button>
+            <button type="button" role="radio" aria-checked="false" data-v="albums" data-i18n="tAlbums"></button>
+            <button type="button" role="radio" aria-checked="false" data-v="mixed" data-i18n="tMixed"></button>
+          </div>
+        </div>
+        <div>
+          <label class="lbl" for="period" data-i18n="lblPeriod"></label>
+          <select class="txt" id="period">
+            <option value="overall" data-i18n="p_overall"></option>
+            <option value="12month" data-i18n="p_12month"></option>
+            <option value="6month" data-i18n="p_6month"></option>
+            <option value="3month" data-i18n="p_3month"></option>
+            <option value="1month" data-i18n="p_1month"></option>
+            <option value="7day" data-i18n="p_7day"></option>
+          </select>
+        </div>
+        <div>
+          <span class="lbl" id="lbl-pool" data-i18n="lblPool"></span>
+          <div class="pick" role="radiogroup" aria-labelledby="lbl-pool" data-name="pool">
+            <button type="button" role="radio" aria-checked="false" data-v="50" data-i18n="pool50"></button>
+            <button type="button" role="radio" aria-checked="true" data-v="100" data-i18n="pool100"></button>
+            <button type="button" role="radio" aria-checked="false" data-v="200" data-i18n="pool200"></button>
+          </div>
+          <p class="hint" data-i18n="hint"></p>
+        </div>
+      </div>
+
+      <details class="key" id="keybox">
+        <summary><span data-i18n="keyTitle"></span> <span class="key-state" id="key-state"></span></summary>
+        <p data-i18n="keyText"></p>
+        <div class="row">
+          <label for="apikey" class="sr-only" data-i18n="keyTitle"></label>
+          <input class="txt" id="apikey" type="text" data-i18n-ph="phKey" spellcheck="false" autocomplete="off" maxlength="64">
+          <button class="btn btn-sm" type="button" id="key-save" data-i18n="save"></button>
+        </div>
+      </details>
+      <p class="err" id="start-err" role="alert" hidden></p>
+    </form>
+
+    <section class="recent" id="recent" hidden>
+      <h2 data-i18n="recent"></h2>
+      <div class="chips" id="recent-chips"></div>
+    </section>
+
+    <section class="how">
+      <h2 data-i18n="howTitle"></h2>
+      <ol>
+        <li data-i18n="how1"></li>
+        <li data-i18n="how2"></li>
+        <li data-i18n="how3"></li>
+      </ol>
+    </section>
+
+    <footer class="foot" data-i18n="foot"></footer>
+  </main>
+</div>
+
+<div class="load" id="screen-load" hidden aria-live="polite">
+  <div>
+    <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <p data-i18n="loading"></p>
+    <b id="load-name"></b>
+  </div>
+</div>
+
+<div class="game" id="screen-game" hidden>
+  <header class="bar">
+    <button class="back" id="g-home" type="button">← <span data-i18n="back"></span></button>
+    <div class="who" id="g-prof"></div>
+    <div class="score"><span><span data-i18n="streak"></span><b id="g-streak">0</b></span><span><span data-i18n="best"></span><b id="g-best">0</b></span></div>
+    <button class="btn theme" type="button" data-theme-toggle></button>
+  </header>
+  <main class="arena" id="arena">
+    <article class="card left" id="card-a"></article>
+    <div class="vs" id="vs" aria-hidden="true"></div>
+    <article class="card right" id="card-b"></article>
+  </main>
+  <p class="sr-only" aria-live="polite" id="live"></p>
+</div>
+
+<div class="over" id="over" hidden role="dialog" aria-modal="true" aria-labelledby="over-title">
+  <div class="over-card">
+    <p class="hand" data-i18n="wrong"></p>
+    <h2 id="over-title">Game over</h2>
+    <div class="big" id="over-n">0</div>
+    <p class="why" id="over-why"></p>
+    <div class="over-btns">
+      <button class="btn btn-main" type="button" id="over-again" data-i18n="again"></button>
+      <button class="btn" type="button" id="over-home" data-i18n="other"></button>
+      <button class="btn" type="button" id="over-share" data-i18n="copy"></button>
+    </div>
+    <p class="over-note" id="over-note" aria-live="polite"></p>
+    <p class="credit" data-i18n="credit"></p>
+  </div>
+</div>
+
+<script>
+/* ===================== Einstellungen / Settings =====================
+   Trag hier deinen Last.fm-API-Schlüssel ein, dann muss niemand
+   beim Spielen einen eigenen eingeben. / Put your Last.fm API key here
+   so players don't need their own: https://www.last.fm/api/account/create
+   ==================================================================== */
+const API_KEY = '';
+
+(function () {
+  'use strict';
+  const API = 'https://ws.audioscrobbler.com/2.0/';
+  const PLACEHOLDER = '2a96cbd8b46e442fc41c2b86b821562f';
+  const $ = (s, el) => (el || document).querySelector(s);
+  const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const REDUCE = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('hot:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('hot:' + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
+  };
+
+  /* ---------------- texts ---------------- */
+  const I18N = {
+    de: {
+      title: 'Höher oder Tiefer', brand: 'höher oder tiefer',
+      h1: 'Höher <span class="or">oder</span> Tiefer?',
+      intro: 'Ein kleines Spiel für alle mit zu vielen Scrobbles. Last.fm-Namen eingeben, dann immer raten: Wurde das hier öfter oder seltener gehört als das davor?',
+      note: 'deiner oder von freunden', lblUser: 'Last.fm-Benutzername', phUser: 'z. B. OutMask', go: "Los geht's",
+      lblType: 'Was wird verglichen?', tArtists: 'Künstler', tTracks: 'Songs', tAlbums: 'Alben', tMixed: 'Alles gemischt',
+      lblPeriod: 'Zeitraum', p_overall: 'Allzeit', p_12month: 'Letzte 12 Monate', p_6month: 'Letzte 6 Monate', p_3month: 'Letzte 3 Monate', p_1month: 'Letzter Monat', p_7day: 'Letzte 7 Tage',
+      lblPool: 'Wie schwer?', pool50: 'Easy (Top 50)', pool100: 'Normal (Top 100)', pool200: 'Hart (Top 200)',
+      hint: "Je tiefer in den Charts, desto obskurer wird's. Und je länger deine Serie, desto knapper liegen die Zahlen.",
+      keyTitle: 'Last.fm-API-Schlüssel', keyOk: '✓ gespeichert', keyMissing: 'fehlt noch',
+      keyText: 'Das Spiel fragt die Charts direkt bei Last.fm ab und braucht dafür einen kostenlosen Schlüssel. <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Hier kannst du einen erstellen</a> (Name egal, Callback-URL leer lassen). Er bleibt nur in diesem Browser.',
+      phKey: '32 Zeichen, 0–9 und a–f', save: 'Speichern',
+      recent: 'Zuletzt gespielt', bestShort: 'Rekord',
+      howTitle: "So geht's", how1: 'Links steht, wie oft etwas gehört wurde.',
+      how2: 'Rechts rätst du: öfter oder seltener? Tasten gehen auch: <kbd>↑</kbd> und <kbd>↓</kbd>.',
+      how3: 'Richtig geraten heißt nächste Runde. Ein Fehler, und die Serie ist vorbei.',
+      credit: 'höher oder tiefer · mit Unterstützung von Claude AI',
+      foot: 'Gebastelt für Last.fm-Nerds, mit Unterstützung von <b>Claude AI</b>. Charts und Cover von der Last.fm-API, fehlende Bilder von Deezer. Sonst wird nichts irgendwohin geschickt.',
+      loading: 'Hole die Charts von', back: 'zurück', streak: 'Serie', best: 'Rekord',
+      tag_artists: 'Künstler', tag_tracks: 'Song', tag_albums: 'Album',
+      mode_artists: 'Künstler', mode_tracks: 'Songs', mode_albums: 'Alben', mode_mixed: 'Gemischt',
+      period_overall: 'Allzeit', period_12month: 'letzte 12 Monate', period_6month: 'letzte 6 Monate', period_3month: 'letzte 3 Monate', period_1month: 'letzter Monat', period_7day: 'letzte 7 Tage',
+      since: 'dabei seit {y}', ask: 'Öfter oder seltener als <b>{a}</b>?', up: '↑ Öfter', down: '↓ Seltener', scrobbles: 'Scrobbles',
+      vs: 'vs', yes: 'jap!', no: 'nope', wrong: 'daneben!', again: 'Nochmal', other: 'Anderes Profil', copy: 'Ergebnis kopieren',
+      copied: 'Kopiert! Einfach irgendwo einfügen.', inARow: 'richtige in Folge', oneRight: 'richtige Antwort',
+      t15: 'Krank. Respekt.', t8: 'Richtig stark.', t3: 'Gar nicht schlecht.', t0: 'Autsch.', newRecord: 'neuer Rekord!',
+      why: '<b>{b}</b> hat <b>{bn}</b> Scrobbles, also {diff} <b>{a}</b> ({an}).', more: '{d} mehr als', less: '{d} weniger als', same: 'genau gleich viele wie',
+      yourBest: ' Dein Rekord hier: {n}.',
+      share: 'Höher oder Tiefer: {n} richtige in Folge mit dem Last.fm-Profil von {u} ({m}, {p}). Schaffst du mehr?',
+      liveAsk: '{a}: {an} Scrobbles. Wurde {b} öfter oder seltener gehört?', liveOk: 'Richtig. {b} hat {bn} Scrobbles. Serie {n}.', liveNo: 'Daneben. {b} hat {bn} Scrobbles.',
+      themeToDark: 'Dunklen Modus einschalten', themeToLight: 'Hellen Modus einschalten',
+      eNoUser: 'Erst einen Last.fm-Namen eintippen.', eNoKey: 'Es fehlt noch der API-Schlüssel. Ist kostenlos, der Link steht direkt hier drunter.',
+      eBadKey: 'Der Schlüssel sieht komisch aus. Last.fm-Schlüssel haben genau 32 Zeichen aus 0–9 und a–f.',
+      eFew: 'In dem Zeitraum gibt es zu wenig für ein Spiel (mindestens 10 Einträge). Nimm einen längeren Zeitraum oder was anderes zum Vergleichen.',
+      e6: 'Diesen Last.fm-Namen gibt es nicht. Vielleicht ein Tippfehler?', e10: 'Der API-Schlüssel funktioniert nicht. Schau nochmal unter „Last.fm-API-Schlüssel“.',
+      e26: 'Dieser API-Schlüssel wurde von Last.fm gesperrt.', e17: 'Das Profil ist privat, Last.fm rückt die Charts nicht raus.',
+      e29: 'Last.fm bremst gerade (zu viele Anfragen). Kurz warten, dann nochmal.', e11: 'Last.fm ist gerade nicht erreichbar. Gleich nochmal probieren.',
+      e16: 'Last.fm hatte einen kurzen Hänger. Bitte nochmal probieren.', e8: 'Last.fm hatte einen kurzen Hänger. Bitte nochmal probieren.',
+      enet: 'Keine Verbindung zu Last.fm. Bist du online?', eOther: 'Last.fm sagt: {m}'
+    },
+    en: {
+      title: 'Higher or Lower', brand: 'higher or lower',
+      h1: 'Higher <span class="or">or</span> Lower?',
+      intro: 'A little game for anyone with way too many scrobbles. Enter a Last.fm username, then keep guessing: was this one played more or less than the one before?',
+      note: "yours or a friend's", lblUser: 'Last.fm username', phUser: 'e.g. OutMask', go: "Let's go",
+      lblType: 'What should we compare?', tArtists: 'Artists', tTracks: 'Tracks', tAlbums: 'Albums', tMixed: 'Everything mixed',
+      lblPeriod: 'Time range', p_overall: 'All time', p_12month: 'Last 12 months', p_6month: 'Last 6 months', p_3month: 'Last 3 months', p_1month: 'Last month', p_7day: 'Last 7 days',
+      lblPool: 'How hard?', pool50: 'Easy (top 50)', pool100: 'Normal (top 100)', pool200: 'Hard (top 200)',
+      hint: 'The deeper into the charts, the more obscure it gets. And the longer your streak, the closer the numbers.',
+      keyTitle: 'Last.fm API key', keyOk: '✓ saved', keyMissing: 'still missing',
+      keyText: 'The game asks Last.fm for the charts directly and needs a free key for that. <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">Create one here</a> (any name, leave the callback URL empty). It only stays in this browser.',
+      phKey: '32 characters, 0–9 and a–f', save: 'Save',
+      recent: 'Recently played', bestShort: 'Best',
+      howTitle: 'How it works', how1: 'On the left you see how often something was played.',
+      how2: 'On the right you guess: more or fewer? Keys work too: <kbd>↑</kbd> and <kbd>↓</kbd>.',
+      how3: 'Guess right and you get the next round. One mistake and the streak is over.',
+      credit: 'higher or lower · built with help from Claude AI',
+      foot: 'Made for Last.fm nerds, with help from <b>Claude AI</b>. Charts and covers from the Last.fm API, missing pictures from Deezer. Nothing else gets sent anywhere.',
+      loading: 'Fetching the charts of', back: 'back', streak: 'Streak', best: 'Best',
+      tag_artists: 'Artist', tag_tracks: 'Track', tag_albums: 'Album',
+      mode_artists: 'Artists', mode_tracks: 'Tracks', mode_albums: 'Albums', mode_mixed: 'Mixed',
+      period_overall: 'all time', period_12month: 'last 12 months', period_6month: 'last 6 months', period_3month: 'last 3 months', period_1month: 'last month', period_7day: 'last 7 days',
+      since: 'since {y}', ask: 'More or fewer plays than <b>{a}</b>?', up: '↑ More', down: '↓ Fewer', scrobbles: 'scrobbles',
+      vs: 'vs', yes: 'yep!', no: 'nope', wrong: 'wrong!', again: 'Play again', other: 'Other profile', copy: 'Copy result',
+      copied: 'Copied! Paste it anywhere.', inARow: 'in a row', oneRight: 'right answer',
+      t15: 'Insane. Respect.', t8: 'Really strong.', t3: 'Not bad at all.', t0: 'Ouch.', newRecord: 'new best!',
+      why: '<b>{b}</b> has <b>{bn}</b> scrobbles, that is {diff} <b>{a}</b> ({an}).', more: '{d} more than', less: '{d} fewer than', same: 'exactly as many as',
+      yourBest: ' Your best here: {n}.',
+      share: 'Higher or Lower: {n} in a row with the Last.fm profile of {u} ({m}, {p}). Can you beat it?',
+      liveAsk: '{a}: {an} scrobbles. Was {b} played more or less?', liveOk: 'Right. {b} has {bn} scrobbles. Streak {n}.', liveNo: 'Wrong. {b} has {bn} scrobbles.',
+      themeToDark: 'Switch to dark mode', themeToLight: 'Switch to light mode',
+      eNoUser: 'Type a Last.fm username first.', eNoKey: "The API key is still missing. It's free, the link is right below.",
+      eBadKey: "That key looks off. Last.fm keys are exactly 32 characters of 0–9 and a–f.",
+      eFew: "There isn't enough data in that time range for a game (at least 10 entries). Pick a longer range or something else to compare.",
+      e6: "That Last.fm user doesn't exist. Maybe a typo?", e10: "The API key doesn't work. Check it under “Last.fm API key”.",
+      e26: 'Last.fm has suspended this API key.', e17: "This profile is private, Last.fm won't share its charts.",
+      e29: 'Last.fm is rate limiting right now (too many requests). Wait a moment and try again.', e11: 'Last.fm is unreachable right now. Try again in a bit.',
+      e16: 'Last.fm had a hiccup. Please try again.', e8: 'Last.fm had a hiccup. Please try again.',
+      enet: 'No connection to Last.fm. Are you online?', eOther: 'Last.fm says: {m}'
+    }
+  };
+  let LANG = store.get('lang', null) || ((navigator.language || 'de').toLowerCase().startsWith('de') ? 'de' : 'en');
+  const t = (k, vars) => {
+    let s = (I18N[LANG] && I18N[LANG][k]) || I18N.de[k] || k;
+    if (vars) Object.keys(vars).forEach(v => { s = s.split('{' + v + '}').join(vars[v]); });
+    return s;
+  };
+  let NF = new Intl.NumberFormat(LANG === 'de' ? 'de-DE' : 'en-US');
+  const fmt = n => NF.format(Math.round(n));
+
+  function applyLang() {
+    document.documentElement.lang = LANG;
+    NF = new Intl.NumberFormat(LANG === 'de' ? 'de-DE' : 'en-US');
+    document.title = t('title');
+    $$('[data-i18n]').forEach(el => { el.innerHTML = t(el.getAttribute('data-i18n')); });
+    $$('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.getAttribute('data-i18n-ph')); });
+    $$('[data-lang]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === LANG ? 'true' : 'false'));
+    themeUI(); keyUI(); recentUI();
+    if (!$('#screen-game').hidden && G.user) { profileUI(); refreshCards(); }
+  }
+  $$('[data-lang]').forEach(b => b.addEventListener('click', () => { LANG = b.dataset.lang; store.set('lang', LANG); applyLang(); }));
+
+  /* ---------------- theme ---------------- */
+  const SUN = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.9 1.9M16.8 16.8l1.9 1.9M5.3 18.7l1.9-1.9M16.8 7.2l1.9-1.9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const MOON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 14.6A7.8 7.8 0 0 1 9.4 4.5a7.9 7.9 0 1 0 10.1 10.1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
+  const root = document.documentElement;
+  const sysDark = () => !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+  const isDark = () => root.getAttribute('data-theme') ? root.getAttribute('data-theme') === 'dark' : sysDark();
+  function themeUI() {
+    $$('[data-theme-toggle]').forEach(b => {
+      b.innerHTML = isDark() ? SUN : MOON;
+      b.setAttribute('aria-label', isDark() ? t('themeToLight') : t('themeToDark'));
+      b.title = b.getAttribute('aria-label');
+    });
+  }
+  $$('[data-theme-toggle]').forEach(b => b.addEventListener('click', () => {
+    const next = isDark() ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    store.set('theme', next);
+    themeUI();
+  }));
+  if (window.matchMedia) { try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeUI); } catch (e) { /* old browser */ } }
+
+  /* ---------------- Last.fm API ---------------- */
+  class LfmError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
+  function apiKey() { return (API_KEY || store.get('apikey', '') || '').trim(); }
+  function jsonp(url, timeout) {
+    return new Promise((resolve, reject) => {
+      const cb = '__cb' + Date.now().toString(36) + Math.floor(Math.random() * 1e6);
+      const s = document.createElement('script');
+      const done = () => { clearTimeout(tm); delete window[cb]; s.remove(); };
+      const tm = setTimeout(() => { done(); reject(new LfmError('net', 'timeout')); }, timeout || 15000);
+      window[cb] = data => { done(); resolve(data); };
+      s.onerror = () => { done(); reject(new LfmError('net', 'network')); };
+      s.src = url + (url.indexOf('?') < 0 ? '?' : '&') + 'callback=' + cb;
+      document.head.appendChild(s);
+    });
+  }
+  let useJsonp = false;
+  async function call(method, params) {
+    const q = new URLSearchParams(Object.assign({ method, api_key: apiKey(), format: 'json' }, params));
+    const url = API + '?' + q.toString();
+    let data;
+    if (!useJsonp) {
+      try { const r = await fetch(url); data = await r.json(); }
+      catch (e) { useJsonp = true; }
+    }
+    if (useJsonp) data = await jsonp(url);
+    if (data && data.error) throw new LfmError(data.error, data.message || 'Error');
+    return data;
+  }
+  const arr = x => (x == null ? [] : Array.isArray(x) ? x : [x]);
+  function pickImg(images) {
+    const by = {};
+    arr(images).forEach(i => { if (i && i['#text']) by[i.size] = i['#text']; });
+    const u = by.extralarge || by.mega || by.large || by.medium || '';
+    return u && u.indexOf(PLACEHOLDER) < 0 ? u : '';
+  }
+  async function loadUser(user) {
+    const d = await call('user.getinfo', { user });
+    const u = d.user || {};
+    return { name: u.name || user, img: pickImg(u.image), since: u.registered ? +(u.registered.unixtime || u.registered['#text'] || 0) : 0 };
+  }
+  const cache = {};
+  async function loadTop(user, type, period, limit) {
+    const key = [user.toLowerCase(), type, period, limit].join('|');
+    if (cache[key]) return cache[key];
+    const method = { artists: 'user.gettopartists', tracks: 'user.gettoptracks', albums: 'user.gettopalbums' }[type];
+    const d = await call(method, { user, period, limit: String(limit) });
+    const r = d.topartists || d.toptracks || d.topalbums || {};
+    const items = arr(r.artist || r.track || r.album).map(it => ({
+      type, title: it.name, by: type === 'artists' ? '' : (it.artist && (it.artist.name || it.artist['#text'])) || '',
+      n: parseInt(it.playcount, 10) || 0, img: pickImg(it.image)
+    })).filter(it => it.n > 0 && it.title);
+    cache[key] = items;
+    return items;
+  }
+
+  /* ---------------- pictures (Deezer, no key needed) ---------------- */
+  const norm = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+  const imgMem = new Map();
+  const dzOk = u => u && u.indexOf('/artist//') < 0 && u.indexOf('/cover//') < 0;
+  async function deezer(path, q) {
+    const url = 'https://api.deezer.com/' + path + '?' + new URLSearchParams({ q, limit: '10', output: 'jsonp' }).toString();
+    const d = await jsonp(url, 8000);
+    return (d && d.data) || [];
+  }
+  async function findImg(it) {
+    if (it.img) return it.img;
+    try {
+      if (it.type === 'artists') {
+        const list = await deezer('search/artist', it.title);
+        const hit = list.filter(a => norm(a.name) === norm(it.title)).sort((x, y) => (y.nb_fan || 0) - (x.nb_fan || 0))[0];
+        return hit && dzOk(hit.picture_xl) ? hit.picture_xl : '';
+      }
+      if (it.type === 'tracks') {
+        // 1) Last.fm: Cover des Albums, auf dem der Song ist
+        try {
+          const d = await call('track.getinfo', { artist: it.by, track: it.title, autocorrect: '1' });
+          const u = d && d.track && d.track.album ? pickImg(d.track.album.image) : '';
+          if (u) return u;
+        } catch (e) { /* weiter mit Deezer */ }
+        // 2) Deezer: erst genau, dann mit bereinigtem Titel
+        const clean = s => String(s).replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/#\S+/g, ' ').replace(/\b(feat|ft|prod)\.?\s.*$/i, ' ').replace(/[^\p{L}\p{N}' ]/gu, ' ').replace(/\s+/g, ' ').trim();
+        const sameArtist = x => x.artist && (norm(x.artist.name) === norm(it.by) || norm(x.artist.name).indexOf(norm(it.by)) === 0 || norm(it.by).indexOf(norm(x.artist.name)) === 0);
+        const tries = ['artist:"' + it.by + '" track:"' + it.title + '"', 'artist:"' + it.by + '" track:"' + clean(it.title) + '"', it.by + ' ' + clean(it.title)];
+        for (const q of tries) {
+          if (!clean(q)) continue;
+          const list = await deezer('search', q);
+          const hit = list.filter(sameArtist).filter(x => x.album && dzOk(x.album.cover_xl))[0];
+          if (hit) return hit.album.cover_xl;
+        }
+        // 3) notfalls das Foto des Künstlers
+        const al = await deezer('search/artist', it.by);
+        const ah = al.filter(a => norm(a.name) === norm(it.by)).sort((x, y) => (y.nb_fan || 0) - (x.nb_fan || 0))[0];
+        return ah && dzOk(ah.picture_xl) ? ah.picture_xl : '';
+      }
+      if (it.type === 'albums') {
+        const list = await deezer('search/album', 'artist:"' + it.by + '" album:"' + it.title + '"');
+        const hit = list.filter(x => x.artist && norm(x.artist.name) === norm(it.by))[0];
+        return hit && dzOk(hit.cover_xl) ? hit.cover_xl : '';
+      }
+    } catch (e) { /* no picture, keep the tile */ }
+    return '';
+  }
+  function imgFor(it) {
+    const k = it.type + '|' + it.title + '|' + it.by;
+    if (!imgMem.has(k)) {
+      imgMem.set(k, findImg(it).then(u => new Promise(res => {
+        if (!u) return res('');
+        const im = new Image();
+        im.referrerPolicy = 'no-referrer';
+        im.onload = () => res(u); im.onerror = () => res('');
+        im.src = u;
+      })));
+    }
+    return imgMem.get(k);
+  }
+
+  /* ---------------- start screen ---------------- */
+  const form = $('#start-form'), input = $('#user'), errEl = $('#start-err');
+  const state = { type: 'artists', period: 'overall', pool: 100 };
+  function setPick(name, v) {
+    $$('.pick[data-name="' + name + '"] button').forEach(b => b.setAttribute('aria-checked', b.dataset.v === String(v) ? 'true' : 'false'));
+  }
+  $$('.pick[data-name]').forEach(g => {
+    const name = g.dataset.name;
+    g.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      state[name] = name === 'pool' ? +b.dataset.v : b.dataset.v;
+      setPick(name, b.dataset.v);
+      store.set('prefs', state);
+    });
+    g.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const bs = $$('button', g); const i = bs.findIndex(b => b.getAttribute('aria-checked') === 'true');
+      const n = bs[(i + (e.key === 'ArrowRight' ? 1 : bs.length - 1)) % bs.length];
+      n.click(); n.focus(); e.preventDefault();
+    });
+  });
+  $('#period').addEventListener('change', e => { state.period = e.target.value; store.set('prefs', state); });
+  const prefs = store.get('prefs', null);
+  if (prefs) Object.assign(state, prefs);
+  setPick('type', state.type); setPick('pool', state.pool); $('#period').value = state.period;
+
+  let errKey = '', errVars = null;
+  function showErr(key, vars) { errKey = key || ''; errVars = vars || null; errEl.textContent = key ? t(key, vars) : ''; errEl.hidden = !key; }
+  function keyUI() {
+    if (API_KEY) { $('#keybox').hidden = true; return; }
+    const has = !!apiKey(), ks = $('#key-state');
+    ks.textContent = has ? t('keyOk') : t('keyMissing');
+    ks.className = 'key-state ' + (has ? 'ok' : 'no');
+    if (!has) $('#keybox').open = true;
+    $('#apikey').value = store.get('apikey', '');
+    if (errKey) errEl.textContent = t(errKey, errVars);
+  }
+  $('#key-save').addEventListener('click', () => {
+    const v = $('#apikey').value.trim();
+    if (v && !/^[0-9a-f]{32}$/i.test(v)) { showErr('eBadKey'); return; }
+    store.set('apikey', v); showErr(''); keyUI();
+    if (v) $('#keybox').open = false;
+  });
+
+  const SWATCH = ['#ffd84d', '#9fd3ff', '#ffb3c1', '#b8f0c4', '#d6c6ff', '#ffc999', '#a8e6e0', '#f4b6f0'];
+  function hash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  const swatch = s => SWATCH[hash(s) % SWATCH.length];
+  const initials = s => (String(s).replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2) || '♪').toUpperCase();
+  function avatar(name, img, cls) {
+    const fb = '<span class="' + cls + '" style="background:' + swatch(name) + '">' + esc(initials(name)) + '</span>';
+    if (!img) return fb;
+    return '<img class="' + cls + '" src="' + esc(img) + '" alt="" loading="lazy" data-fb="' + esc(fb) + '">';
+  }
+  function bindAvatarFallback(rootEl) {
+    $$('img[data-fb]', rootEl).forEach(img => img.addEventListener('error', () => { img.outerHTML = img.getAttribute('data-fb'); }, { once: true }));
+  }
+
+  function recentUI() {
+    const rec = store.get('recent', []);
+    const box = $('#recent');
+    if (!rec.length) { box.hidden = true; return; }
+    box.hidden = false;
+    $('#recent-chips').innerHTML = rec.slice(0, 8).map(r => {
+      const best = store.get('bestAny:' + r.name.toLowerCase(), 0);
+      return '<button type="button" class="chip" data-user="' + esc(r.name) + '">' + avatar(r.name, r.img, 'av') + esc(r.name) + (best ? ' <small>' + t('bestShort') + ' ' + best + '</small>' : '') + '</button>';
+    }).join('');
+    bindAvatarFallback($('#recent-chips'));
+  }
+  $('#recent-chips').addEventListener('click', e => {
+    const b = e.target.closest('[data-user]'); if (!b) return;
+    input.value = b.dataset.user; start();
+  });
+  form.addEventListener('submit', e => { e.preventDefault(); start(); });
+
+  function show(id) { ['screen-start', 'screen-load', 'screen-game'].forEach(s => { $('#' + s).hidden = s !== id; }); window.scrollTo(0, 0); }
+
+  /* ---------------- game ---------------- */
+  const G = { user: null, pool: [], used: new Set(), a: null, b: null, peek: null, streak: 0, best: 0, locked: true, key: '', phase: 'ask' };
+
+  async function start() {
+    const user = input.value.trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?last\.fm\/(\w+\/)?user\//i, '').replace(/\/.*$/, '');
+    if (!user) { showErr('eNoUser'); input.focus(); return; }
+    if (!apiKey()) { showErr('eNoKey'); $('#keybox').open = true; $('#apikey').focus(); return; }
+    showErr('');
+    $('#load-name').textContent = user;
+    show('screen-load');
+    try {
+      const types = state.type === 'mixed' ? ['artists', 'tracks', 'albums'] : [state.type];
+      const [info, ...lists] = await Promise.all([loadUser(user)].concat(types.map(ty => loadTop(user, ty, state.period, state.pool))));
+      const pool = [].concat(...lists);
+      if (pool.length < 10) throw new LfmError('few', '');
+      G.user = info; G.pool = pool;
+      G.key = [info.name.toLowerCase(), state.type, state.period, state.pool].join('|');
+      G.best = store.get('best:' + G.key, 0);
+      rememberRecent(info);
+      if (/^https?:/.test(location.protocol)) {
+        const p = new URLSearchParams({ user: info.name, type: state.type, period: state.period, pool: String(state.pool) });
+        history.replaceState(null, '', location.pathname + '?' + p.toString());
+      }
+      profileUI();
+      newGame();
+      show('screen-game');
+    } catch (e) {
+      show('screen-start');
+      if (e.code === 'few') showErr('eFew');
+      else if (I18N.de['e' + e.code]) showErr('e' + e.code);
+      else showErr('eOther', { m: e.message || '?' });
+    }
+  }
+  function rememberRecent(info) {
+    const rec = store.get('recent', []).filter(r => r.name.toLowerCase() !== info.name.toLowerCase());
+    rec.unshift({ name: info.name, img: info.img });
+    store.set('recent', rec.slice(0, 12));
+  }
+  function profileUI() {
+    const u = G.user;
+    const yr = u.since ? new Date(u.since * 1000).getFullYear() : null;
+    $('#g-prof').innerHTML = avatar(u.name, u.img, 'av') + '<div><b>' + esc(u.name) + '</b><span>' + t('mode_' + state.type) + ' · ' + t('period_' + state.period) + ' · Top ' + state.pool + (yr ? ' · ' + t('since', { y: yr }) : '') + '</span></div>';
+    bindAvatarFallback($('#g-prof'));
+  }
+
+  function pickNext(prev, streak) {
+    const all = G.pool.filter(it => it !== prev && !G.used.has(it));
+    if (all.length < 2) { G.used.clear(); return pickNext(prev, streak); }
+    if (!prev) return all[Math.floor(Math.random() * all.length)];
+    const s = streak;
+    const maxRatio = s < 4 ? Infinity : s < 9 ? 3 : s < 16 ? 1.9 : s < 25 ? 1.45 : 1.25;
+    const ratio = it => Math.max(it.n, prev.n) / Math.max(1, Math.min(it.n, prev.n));
+    let cand = all.filter(it => ratio(it) <= maxRatio && it.n !== prev.n);
+    if (cand.length < 3) cand = all.filter(it => it.n !== prev.n);
+    if (!cand.length) cand = all;
+    return cand[Math.floor(Math.random() * cand.length)];
+  }
+  const RING = '<svg class="ring" viewBox="0 0 74 64" aria-hidden="true"><path d="M58 9 C 44 1, 14 4, 7 22 C 1 38, 18 58, 40 57 C 61 56, 72 40, 66 22 C 63 13, 54 8, 44 7"/></svg>';
+  let vsMode = '';
+  function vsUI(mode) {
+    vsMode = mode;
+    const vs = $('#vs');
+    vs.className = 'vs' + (mode ? ' ' + mode : '');
+    vs.innerHTML = RING + '<span>' + (mode === 'ok' ? t('yes') : mode === 'no' ? t('no') : t('vs')) + '</span>';
+  }
+  function newGame() {
+    G.used = new Set(); G.streak = 0;
+    G.a = pickNext(null, 0); G.used.add(G.a);
+    G.b = pickNext(G.a, 0); G.used.add(G.b);
+    G.peek = null;
+    $('#g-streak').textContent = '0';
+    $('#g-best').textContent = G.best;
+    $('#over').hidden = true;
+    vsUI('');
+    render(false);
+  }
+  const DOODLES = ['♪', '♫', '★', '♥', '✿', '☾'];
+  function tileHTML(it) {
+    const h = hash(it.title + '|' + it.by);
+    return '<span class="ini">' + esc(initials(it.title)) + '</span><span class="doodle">' + DOODLES[(h >>> 7) % DOODLES.length] + '</span>';
+  }
+  function infoHTML(it, side) {
+    const long = it.title.length > 26 ? ' long' : '';
+    let info = '<span class="tag">' + t('tag_' + it.type) + '</span><h2 class="title' + long + '">' + esc(it.title) + '</h2>' + (it.by ? '<p class="by">' + esc(it.by) + '</p>' : '');
+    if (side === 'a') {
+      info += '<div class="num">' + fmt(it.n) + '<small>' + t('scrobbles') + '</small></div>';
+    } else if (G.phase === 'ask') {
+      info += '<p class="ask">' + t('ask', { a: esc(G.a.title) }) + '</p>' +
+        '<div class="btns"><button class="btn btn-up" type="button" data-ans="up">' + t('up') + '</button><button class="btn btn-down" type="button" data-ans="down">' + t('down') + '</button></div>' +
+        '<div class="num" hidden><span>0</span><small>' + t('scrobbles') + '</small></div>';
+    } else {
+      info += '<div class="num"><span>' + fmt(it.n) + '</span><small>' + t('scrobbles') + '</small></div>';
+    }
+    return info;
+  }
+  function cardHTML(it, side) {
+    const h = hash(it.title + '|' + it.by);
+    return '<div class="art" style="background:' + SWATCH[h % SWATCH.length] + '">' + tileHTML(it) + '</div><div class="info">' + infoHTML(it, side) + '</div>';
+  }
+  function hydrate(card, it) {
+    const key = it.type + '|' + it.title + '|' + it.by;
+    card.dataset.key = key;
+    imgFor(it).then(u => {
+      if (!u || card.dataset.key !== key) return;
+      const art = $('.art', card);
+      const img = new Image();
+      img.alt = ''; img.referrerPolicy = 'no-referrer'; img.className = 'pic';
+      img.src = u;
+      art.appendChild(img);
+      requestAnimationFrame(() => img.classList.add('on'));
+    });
+  }
+  function bindAnswers() { $$('[data-ans]', $('#card-b')).forEach(b => b.addEventListener('click', () => answer(b.dataset.ans === 'up'))); }
+  function render(animate) {
+    G.phase = 'ask';
+    const ca = $('#card-a'), cb = $('#card-b');
+    ca.className = 'card left'; cb.className = 'card right';
+    ca.innerHTML = cardHTML(G.a, 'a');
+    cb.innerHTML = cardHTML(G.b, 'b');
+    hydrate(ca, G.a); hydrate(cb, G.b);
+    if (animate && !REDUCE) { void ca.offsetWidth; ca.classList.add('in-left'); cb.classList.add('in-right'); }
+    bindAnswers();
+    G.locked = false;
+    // pick the next card already, so its picture is ready when we get there
+    G.peek = pickNext(G.b, G.streak + 1);
+    imgFor(G.peek);
+    $('#live').textContent = t('liveAsk', { a: G.a.title, an: fmt(G.a.n), b: G.b.title });
+  }
+  function refreshCards() {
+    $('.info', $('#card-a')).innerHTML = infoHTML(G.a, 'a');
+    $('.info', $('#card-b')).innerHTML = infoHTML(G.b, 'b');
+    if (G.phase === 'ask') bindAnswers();
+    vsUI(vsMode);
+  }
+  function countTo(el, to, dur) {
+    if (REDUCE) { el.textContent = fmt(to); return Promise.resolve(); }
+    return new Promise(res => {
+      const t0 = performance.now();
+      (function step(now) {
+        const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+        el.textContent = fmt(to * e);
+        if (p < 1) requestAnimationFrame(step); else res();
+      })(t0);
+    });
+  }
+  async function answer(up) {
+    if (G.locked) return;
+    G.locked = true;
+    G.phase = 'reveal';
+    const cb = $('#card-b');
+    const ok = up ? G.b.n >= G.a.n : G.b.n <= G.a.n;
+    $('.btns', cb).hidden = true;
+    $('.ask', cb).hidden = true;
+    const num = $('.num', cb); num.hidden = false;
+    await countTo($('span', num), G.b.n, 650);
+    vsUI(ok ? 'ok' : 'no');
+    cb.classList.add(ok ? 'ok' : 'no');
+    if (ok) {
+      G.streak++;
+      const sEl = $('#g-streak'); sEl.textContent = G.streak; sEl.classList.remove('bump'); void sEl.offsetWidth; sEl.classList.add('bump');
+      let record = false;
+      if (G.streak > G.best) { G.best = G.streak; record = true; store.set('best:' + G.key, G.best); $('#g-best').textContent = G.best; }
+      const anyKey = 'bestAny:' + G.user.name.toLowerCase();
+      if (G.streak > store.get(anyKey, 0)) store.set(anyKey, G.streak);
+      $('#live').textContent = t('liveOk', { b: G.b.title, bn: fmt(G.b.n), n: G.streak });
+      if (record && G.streak >= 5 && G.streak % 5 === 0) confetti();
+      setTimeout(() => {
+        G.a = G.b;
+        G.b = G.peek && G.peek !== G.a && !G.used.has(G.peek) ? G.peek : pickNext(G.a, G.streak);
+        G.used.add(G.b);
+        vsUI('');
+        render(true);
+      }, REDUCE ? 350 : 950);
+    } else {
+      if (!REDUCE) { cb.classList.remove('wobble'); void cb.offsetWidth; cb.classList.add('wobble'); }
+      $('#live').textContent = t('liveNo', { b: G.b.title, bn: fmt(G.b.n) });
+      setTimeout(gameOver, REDUCE ? 400 : 1100);
+    }
+  }
+  function gameOver() {
+    const a = G.a, b = G.b, s = G.streak;
+    const isRec = s > 0 && s >= G.best;
+    $('#over-n').innerHTML = s + ' <span>' + (s === 1 ? t('oneRight') : t('inARow')) + '</span>';
+    $('#over-title').innerHTML = t(s >= 15 ? 't15' : s >= 8 ? 't8' : s >= 3 ? 't3' : 't0') + (isRec ? ' <span class="record">' + t('newRecord') + '</span>' : '');
+    const diff = b.n === a.n ? t('same') : b.n > a.n ? t('more', { d: fmt(b.n - a.n) }) : t('less', { d: fmt(a.n - b.n) });
+    $('#over-why').innerHTML = t('why', { b: esc(b.title), bn: fmt(b.n), diff, a: esc(a.title), an: fmt(a.n) }) + (isRec ? '' : t('yourBest', { n: G.best }));
+    $('#over-note').textContent = '';
+    $('#over').hidden = false;
+    $('#over-again').focus();
+  }
+  function shareText() {
+    let s = t('share', { n: G.streak, u: G.user.name, m: t('mode_' + state.type), p: t('period_' + state.period) });
+    if (/^https?:/.test(location.protocol)) s += ' ' + location.href;
+    return s;
+  }
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) {
+      const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      let ok = false; try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+      ta.remove(); return ok;
+    }
+  }
+  $('#over-again').addEventListener('click', newGame);
+  $('#over-home').addEventListener('click', goHome);
+  $('#g-home').addEventListener('click', goHome);
+  $('#over-share').addEventListener('click', async () => {
+    const s = shareText();
+    const ok = await copy(s);
+    $('#over-note').textContent = ok ? t('copied') : s;
+  });
+  function goHome() {
+    $('#over').hidden = true;
+    show('screen-start');
+    recentUI();
+    if (G.user) input.value = G.user.name;
+    input.focus();
+  }
+  document.addEventListener('keydown', e => {
+    if ($('#screen-game').hidden) return;
+    if (!$('#over').hidden) { if (e.key === 'Escape') goHome(); return; }
+    if (e.target.closest && e.target.closest('input, select, textarea')) return;
+    if (e.key === 'ArrowUp' || e.key === 'w') { e.preventDefault(); answer(true); }
+    else if (e.key === 'ArrowDown' || e.key === 's') { e.preventDefault(); answer(false); }
+  });
+
+  function confetti() {
+    if (REDUCE) return;
+    const cv = document.createElement('canvas'); cv.className = 'confetti';
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+    document.body.appendChild(cv);
+    const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+    const cols = ['#ffd84d', '#2b50d6', '#ff6f6f', '#43c97b', '#d6c6ff'];
+    const ps = Array.from({ length: 110 }, () => ({ x: innerWidth / 2, y: innerHeight * 0.4, vx: (Math.random() - .5) * 13, vy: -Math.random() * 11 - 4, s: 5 + Math.random() * 5, r: Math.random() * 6, c: cols[Math.floor(Math.random() * cols.length)] }));
+    const t0 = performance.now();
+    (function step(now) {
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      ps.forEach(p => { p.vy += 0.33; p.x += p.vx; p.y += p.vy; p.r += 0.12; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); ctx.restore(); });
+      if (now - t0 < 1800) requestAnimationFrame(step); else cv.remove();
+    })(t0);
+  }
+
+  /* ---------------- boot ---------------- */
+  applyLang();
+  const qp = new URLSearchParams(location.search);
+  if (['artists', 'tracks', 'albums', 'mixed'].includes(qp.get('type'))) { state.type = qp.get('type'); setPick('type', state.type); }
+  if (qp.get('period') && I18N.de['p_' + qp.get('period')]) { state.period = qp.get('period'); $('#period').value = state.period; }
+  if (['50', '100', '200'].includes(qp.get('pool'))) { state.pool = +qp.get('pool'); setPick('pool', state.pool); }
+  if (qp.get('lang') === 'en' || qp.get('lang') === 'de') { LANG = qp.get('lang'); applyLang(); }
+  if (qp.get('user')) { input.value = qp.get('user'); if (apiKey()) start(); }
+  else input.focus();
+})();
+</script>
+</body>
+</html>
